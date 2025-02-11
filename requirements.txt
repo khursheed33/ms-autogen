@@ -1,0 +1,7 @@
+# requirements.txt
+fastapi
+uvicorn
+websockets
+pyautogen
+aioconsole
+python-dotenv
