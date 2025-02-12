@@ -1,9 +1,13 @@
+import json
+import logging
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from autogen import AssistantAgent, UserProxyAgent
 from uuid import uuid4
-
 from fastapi.responses import HTMLResponse
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 app = FastAPI()
 
@@ -24,28 +28,46 @@ user_proxy = UserProxyAgent("user_proxy", code_execution_config={"use_docker": F
 
 # Dictionary to store conversation history for each session
 sessions = {}
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket chat endpoint with session management"""
     await websocket.accept()
     session_id = str(uuid4())  # Generate a unique session ID
     sessions[session_id] = {"conversation": [], "needs_human": False}  # Initialize as a dictionary
+    logging.info(f"New WebSocket session created: {session_id}")
 
     try:
         while True:
             data = await websocket.receive_text()
-            response, needs_human = await chat_with_human_in_loop(session_id, data)
-            await websocket.send_text(response)
-    except WebSocketDisconnect:
-        # Clean up session when the connection is closed
-        del sessions[session_id]
+            logging.info(f"Received message from session {session_id}: {data}")
 
+            # Parse the incoming message (assuming it's JSON)
+            try:
+                message_data = json.loads(data)
+                user_message = message_data.get("message", "")
+            except json.JSONDecodeError:
+                user_message = data  # Fallback to plain text if JSON parsing fails
+
+            # Get AI response and human intervention status
+            response, needs_human = await chat_with_human_in_loop(session_id, user_message)
+
+            # Send JSON response
+            response_data = {
+                "response": response,
+                "human_intervention": needs_human
+            }
+            await websocket.send_text(json.dumps(response_data))
+
+            logging.info(f"Sent response to session {session_id}: {response_data}")
+    except WebSocketDisconnect:
+        logging.info(f"WebSocket connection closed for session: {session_id}")
+        del sessions[session_id]
 
 async def chat_with_human_in_loop(session_id: str, message: str):
     """Handles the chat and determines if human intervention is needed"""
     if session_id not in sessions:
-        sessions[session_id] = {"conversation": [], "needs_human": False}  # Initialize as a dictionary
+        sessions[session_id] = {"conversation": [], "needs_human": False}
+        logging.info(f"New session created: {session_id}")
 
     conversation = sessions[session_id]["conversation"]
     needs_human = sessions[session_id]["needs_human"]
@@ -57,19 +79,25 @@ async def chat_with_human_in_loop(session_id: str, message: str):
     if "in 2 lines" in message.lower() or "summarize" in message.lower():
         summary = await summarize_text(conversation)
         conversation.append({"role": "assistant", "content": summary})
+        logging.info(f"Generated summary for session {session_id}: {summary}")
         return summary, False
 
     # AI response
-    response = ai_assistant.generate_reply(messages=conversation)
+    try:
+        response = ai_assistant.generate_reply(messages=conversation)
+    except Exception as e:
+        logging.error(f"Error generating AI response for session {session_id}: {str(e)}")
+        response = "An error occurred while processing your request. Please try again."
 
     # Add AI response to conversation history
     conversation.append({"role": "assistant", "content": response})
 
-    # Simulate need for human intervention (you can modify the logic)
+    # Simulate need for human intervention
     needs_human = "help" in message.lower() or "human" in message.lower()
     sessions[session_id]["needs_human"] = needs_human
 
     if needs_human:
+        logging.info(f"Human intervention requested for session {session_id}")
         return "A human agent will assist you shortly.", True
 
     return response, False
@@ -144,7 +172,7 @@ async def summarize_text(conversation: list) -> str:
 @app.get("/")
 async def get():
     # Get the path to the index.html file
-    file_path = os.path.join(os.path.dirname(__file__), "views/index.html")
+    file_path = os.path.join(os.path.dirname(__file__), "app\\views\\index.html")
     
     # Read the file content
     with open(file_path, "r") as file:
