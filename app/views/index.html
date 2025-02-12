@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #chat-container {
+            width: 40vw;
+            height: 90vh;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 10px;
+            overflow-y: auto;
+            height: 80%;
+            border-bottom: 1px solid #ddd;
+        }
+        #messages li {
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            border-radius: 18px;
+            max-width: 70%;
+            word-wrap: break-word;
+            position: relative;
+        }
+        #messages li.user {
+            background-color: #e1ffc7;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        #messages li.ai {
+            background-color: #f1f1f1;
+            align-self: flex-start;
+            margin-right: auto;
+        }
+        #messages li.system {
+            background-color: #ffeb3b;
+            text-align: center;
+            margin: 10px auto;
+        }
+        #messages li .timestamp {
+            font-size: 0.8em;
+            color: #666;
+            position: absolute;
+            bottom: -18px;
+            right: 0;
+        }
+        form {
+            display: flex;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 18px;
+            margin-right: 8px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            border-radius: 18px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #4cae4c;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            padding: 10px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <h1 style="text-align: center; padding: 10px; background-color: #5cb85c; color: white; margin: 0;">Chat with AI</h1>
+        <ul id="messages"></ul>
+        <div class="loading" id="loading" style="display: none;">AI is typing...</div>
+        <form action="" onsubmit="sendMessage(event)">
+            <input type="text" id="messageText" autocomplete="off" placeholder="Type a message..."/>
+            <button type="submit" id="sendButton">Send</button>
+        </form>
+    </div>
+    <script>
+        var ws = new WebSocket("ws://localhost:8000/ws");
+        var sessionId = null; // Track session ID for context
+
+        // Handle WebSocket connection open
+        ws.onopen = function() {
+            console.log("WebSocket connection established.");
+        };
+
+        // Handle WebSocket messages
+        ws.onmessage = function(event) {
+            var messages = document.getElementById('messages');
+            var loading = document.getElementById('loading');
+            var data = JSON.parse(event.data); // Parse JSON response
+
+            // Hide loading indicator
+            loading.style.display = "none";
+
+            // Display AI response
+            var message = document.createElement('li');
+            message.classList.add('ai');
+            message.appendChild(document.createTextNode(data.response));
+            messages.appendChild(message);
+
+            // Scroll to the latest message
+            messages.scrollTop = messages.scrollHeight;
+
+            // Handle human intervention
+            if (data.human_intervention) {
+                var systemMessage = document.createElement('li');
+                systemMessage.classList.add('system');
+                systemMessage.appendChild(document.createTextNode("A human agent will assist you shortly."));
+                messages.appendChild(systemMessage);
+            }
+        };
+
+        // Handle WebSocket errors
+        ws.onerror = function(error) {
+            console.error("WebSocket error:", error);
+            var messages = document.getElementById('messages');
+            var errorMessage = document.createElement('li');
+            errorMessage.classList.add('system');
+            errorMessage.appendChild(document.createTextNode("Connection error. Please try again."));
+            messages.appendChild(errorMessage);
+        };
+
+        // Handle WebSocket connection close
+        ws.onclose = function() {
+            console.log("WebSocket connection closed.");
+            var messages = document.getElementById('messages');
+            var closeMessage = document.createElement('li');
+            closeMessage.classList.add('system');
+            closeMessage.appendChild(document.createTextNode("Connection closed. Refresh to reconnect."));
+            messages.appendChild(closeMessage);
+        };
+
+        // Send user message
+        function sendMessage(event) {
+            var input = document.getElementById("messageText");
+            var messages = document.getElementById('messages');
+            var loading = document.getElementById('loading');
+            var sendButton = document.getElementById('sendButton');
+
+            if (input.value.trim() !== "") {
+                // Disable send button and show loading indicator
+                sendButton.disabled = true;
+                loading.style.display = "block";
+
+                // Send message to WebSocket
+                ws.send(JSON.stringify({ message: input.value, sessionId: sessionId }));
+
+                // Display user message
+                var message = document.createElement('li');
+                message.classList.add('user');
+                message.appendChild(document.createTextNode("You: " + input.value));
+                messages.appendChild(message);
+
+                // Clear input and re-enable send button
+                input.value = "";
+                sendButton.disabled = false;
+
+                // Scroll to the latest message
+                messages.scrollTop = messages.scrollHeight;
+            }
+            event.preventDefault();
+        }
+    </script>
+</body>
+</html>
